@@ -10,7 +10,7 @@ if st.button("submit"):
 
 data = pd.DataFrame({
     "Month":["Jan","Feb","Mar"],
-    "Sales":[100,200,150]
+    "Sales":[190,200,50]
 })
 
 st.bar_chart(data.set_index("Month"))
