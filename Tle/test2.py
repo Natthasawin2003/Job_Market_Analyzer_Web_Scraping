@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import datetime
 
 st.set_page_config(layout="wide")
@@ -33,6 +34,7 @@ df = pd.DataFrame({
     "company":["ABC","XYZ","DATA","TECH"]*30,
     "province":np.random.choice(["Bangkok","Remote","Chiang Mai"],120),
     "salary":np.random.randint(18000,60000,120),
+    "web":np.random.choice(["Jobsdb","Jobbkk","Jobthai"],120),
     "posted_date":pd.date_range("2026-01-01",periods=120),
     "link":["https://example.com"]*120,
     "description":["Example job"]*120
@@ -73,32 +75,32 @@ c1,c2,c3,c4 = st.columns(4)
 
 c1.metric("Total Jobs", len(df))
 
-c2.metric(
-    "Avg Salary",
-    int(df["salary"].mean()) if len(df)>0 else 0
-)
+c2.metric("Avg Salary",int(df["salary"].mean()) if len(df)>0 else 0)
 
-c3.metric(
-    "Companies",
-    df["company"].nunique()
-)
+c3.metric("Companies",df["company"].nunique())
 
-c4.metric(
-    "Max Salary",
-    df["salary"].max() if len(df)>0 else 0
-)
+if len(df)>0:
+    percent = df["salary"].notna().sum()/len(df)*100
+else:
+    percent = 0
+
+c4.metric("Show Salary", "%.1f %%" % percent)
 
 # ---------------- BIG GRAPH + SIDE ----------------
-big,side = st.columns([3,1])
+big,side = st.columns([2,2])
 
 with big:
     st.subheader("Salary Distribution")
     if len(df)>0:
-        st.bar_chart(df["salary"])
+        fig, ax = plt.subplots()
+        ax.hist(df["salary"].dropna(), bins=30)
+        ax.set_xlabel("Salary")
+        ax.set_ylabel("Jobs")
+        st.pyplot(fig)
 
 with side:
-    st.subheader("Province count")
-    st.write(df["province"].value_counts())
+    st.subheader("Job per Web")
+    st.bar_chart(df["web"].value_counts())
 
 # ---------------- TWO GRAPHS ----------------
 g1,g2 = st.columns(2)
@@ -126,12 +128,13 @@ df = df.rename(columns={
     "company":"Company",
     "province":"Location",
     "salary":"Salary",
+    "web":"Web",
     "posted_date":"Posted Date",
     "description":"Description",
     "link":"Link"
 })
 
-show_cols = [c for c in ["Job","Company","Location","Salary","Posted Date","Description","Link"] if c in df.columns]
+show_cols = [c for c in ["Job","Company","Location","Salary","Web","Posted Date","Description","Link"] if c in df.columns]
 
 st.write(
     df[show_cols].to_html(escape=False,index=False),
