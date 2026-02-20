@@ -222,11 +222,12 @@ province_counts.columns=["province","jobs"]
 if isinstance(date_range, tuple):
     if len(date_range)==2:
         start,end = pd.to_datetime(date_range[0]),pd.to_datetime(date_range[1])
-        df = df[(df["posted_date"]>=start)&(df["posted_date"]<=end)]
+        df_show = df_show[(df_show["posted_date"]>=start)&(df_show["posted_date"]<=end)]
 
 elif isinstance(date_range, datetime.date):
     start = pd.to_datetime(date_range)
-    df = df[df["posted_date"]>=start]
+    df_show = df_show[df_show["posted_date"]>=start]
+
 #กราฟ 1
 st.title("📊 Job Market Dashboard") 
 c1,c2,c3,c4 = st.columns(4)
@@ -235,8 +236,11 @@ c1,c2,c3,c4 = st.columns(4)
 c1.metric("Total Jobs", len(df_show))
 
 #ค่าเฉลี่ยเงินเดือน
-c2.metric("Avg Salary", int(df_show["mid_salary"].mean(skipna=True)) 
-    if pd.notna(df["mid_salary"].mean(skipna=True)) else 0
+avg = df_show["mid_salary"].mean()
+
+c2.metric(
+    "Avg Salary",
+    f"{int(avg):,}" if pd.notna(avg) else "0"
 )
 
 #จำนวนบริษัท
@@ -257,7 +261,7 @@ with f1:
     st.subheader("Salary Range")
     bins=[0,25000,50000,75000,100000,125000,150000,1000000]
     labels=["<25k","25-50k","50-75k","75-100k","100-125k","125-150k","150k+"]
-    temp=df.copy()
+    temp=df_show.copy()
     temp["ช่วงเงินเดือน"]=pd.cut(temp["mid_salary"],bins=bins,labels=labels)
     counts = (
     temp["ช่วงเงินเดือน"]
