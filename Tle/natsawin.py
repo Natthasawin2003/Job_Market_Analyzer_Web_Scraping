@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import datetime
+import plotly.express as px
 
 plt.rcParams["font.family"] = "Tahoma"
 
@@ -79,6 +80,8 @@ if use_salary:
 else:
     df_show = df.copy()
     
+
+
 # DATE FILTER (version กันพัง 100%)
 if isinstance(date_range, tuple):
     if len(date_range)==2:
@@ -139,12 +142,45 @@ with side:
     else:
         st.write("No data")
 # ================= SECOND ROW =================
-g1,g2 = st.columns(2)
+g1,g2 = st.columns([2.5,1])
 
 # ----- COMPANY GRAPH -----
 with g1:
-    st.subheader("Top Companies Hiring")
-    st.bar_chart(df_show["company"].value_counts().head(10))
+    st.subheader("Job Skill")
+    skill_cols = [c for c in df_show.columns if c.startswith("skill_")]
+
+    skill_counts = df_show[skill_cols].sum().sort_values(ascending=True)
+
+    nice = {
+        "python":"Python",
+        "sql & database":"SQL & Database",
+        "c++":"C++",
+        "mongodb":"MongoDB",
+        "aws":"AWS",
+        "etl":"ETL",
+        "gcp":"GCP",
+    }
+
+    skill_counts.index = (
+        skill_counts.index
+        .str.replace("skill_","",regex=False)
+        .str.replace("_"," ")
+        .str.lower()
+        .map(lambda x: nice.get(x,x.capitalize()))
+    )
+    skill_df = skill_counts.reset_index()
+    skill_df.columns = ["Skill","Count"]
+
+    fig2 = px.treemap(
+        skill_df,
+        path=["Skill"],
+        values="Count"
+    )
+
+    fig2.update_traces(
+    hovertemplate="<b>%{label}</b><br>จำนวน: %{value} คน<extra></extra>"
+    )
+    st.plotly_chart(fig2, use_container_width=True)
 
 # ----- SALARY BUCKET (IMPORTANT) -----
 with g2:
@@ -160,15 +196,45 @@ with g2:
     ax.set_ylabel("")   
     st.pyplot(fig)
 
+h1,h2 = st.columns(2)
+
+with h1:
+    salary_role = (
+    df_show.groupby("keyword")["mid_salary"]
+    .mean()
+    .sort_values()
+    .tail(15)
+    )
+    st.bar_chart(salary_role)
+
+with h2:
+    skill_cols=[c for c in df_show.columns if c.startswith("skill_")]
+    skill_salary={}
+    for s in skill_cols:
+        avg=df_show[df_show[s]==1]["mid_salary"].mean()
+        if pd.notna(avg):
+            skill_salary[s.replace("skill_","")]=avg
+    skill_salary=pd.Series(skill_salary).sort_values()
+    st.bar_chart(skill_salary)
+
+
 # ================= TABLE =================
 st.subheader("Job Table")
+
+# แสดงตัวเลข
+#for i, v in enumerate(skill_counts):
+#    ax.text(v + 1, i, str(int(v)), va="center")
+#
+#ax.set_xlabel("Number of Jobs")
+#ax.set_ylabel("")
+#st.pyplot(fig)
 
 # clickable link
 def make_clickable(url):
     return f'<a target="_blank" href="{url}">open job</a>'
 
 if "job_url" in df.columns:
-    df["job_url"] = df["job_url"].apply(make_clickable)
+    df_show["job_url"] = df_show["job_url"].apply(make_clickable)
 
 #df = df.rename(columns={
 #    "title":"Job",
@@ -186,6 +252,7 @@ show_cols = [c for c in [
         "province_name",
         "company",
         "posted_date",
+        "matched_skill_count",
         "job_url"
     ] 
     if c in df.columns
