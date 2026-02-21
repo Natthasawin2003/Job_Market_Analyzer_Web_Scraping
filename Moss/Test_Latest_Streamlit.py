@@ -134,7 +134,7 @@ top_skill_n = st.sidebar.slider(
 )
 
 # ตัวดึงข้อมูลจากไฟล์ CSV
-df = pd.read_csv("G:\\Users\\Moss\\Documents\\PYTHON_PROJECT\\Job_Market_Analyzer_Web_Scraping\\Moss\\Scraped_All\\jobs_all_scraped.csv")
+df = pd.read_csv("Moss\Scraped_All\jobs_all_scraped.csv")
 
 df["mid_salary"] = df[["min_salary","max_salary"]].mean(axis=1)
 df_all = df.copy()
