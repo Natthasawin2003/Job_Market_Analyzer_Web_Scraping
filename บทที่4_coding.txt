@@ -1,0 +1,248 @@
+================================================================
+บทที่ 4 วิธีการพัฒนาระบบ (System Development)
+================================================================
+
+โครงการนี้พัฒนาระบบดึงข้อมูลตลาดงานด้าน Data จากเว็บไซต์หางาน 3 แพลตฟอร์ม
+ได้แก่ JobThai, JobsDB และ JOBBKK โดยใช้ภาษา Python และส่งออกข้อมูลในรูปแบบ
+CSV เพื่อนำไปวิเคราะห์ต่อบน Streamlit Dashboard
+
+----------------------------------------------------------------
+4.1 การตั้งค่าสภาพแวดล้อมและนำเข้าไลบรารี (Setup & Imports)
+----------------------------------------------------------------
+
+ระบบนำเข้าไลบรารีที่จำเป็นสำหรับการส่ง HTTP Request, วิเคราะห์ HTML,
+จัดการข้อมูล และกำหนดเส้นทางไฟล์
+
+    import pandas as pd                      # จัดการข้อมูลตาราง
+    from bs4 import BeautifulSoup            # วิเคราะห์โครงสร้าง HTML
+    import requests                          # ส่ง HTTP Request
+    import re                                # จับรูปแบบข้อความด้วย Regular Expression
+    from datetime import datetime, timedelta # จัดการวันที่
+    import time                              # หน่วงเวลาระหว่างการดึงข้อมูล
+    from pathlib import Path                 # จัดการเส้นทางไฟล์
+
+
+กำหนดโฟลเดอร์จัดเก็บผลลัพธ์โดยอัตโนมัติ พร้อมสร้างหากยังไม่มีอยู่
+
+    BASE_DIR          = Path(__file__).resolve().parent
+    SCRAPED_EACH_DIR  = BASE_DIR / "Scraped_Each"   # เก็บไฟล์แยกแต่ละแพลตฟอร์ม
+    SCRAPED_ALL_DIR   = BASE_DIR / "Scraped_All"    # เก็บไฟล์รวมทุกแพลตฟอร์ม
+
+    SCRAPED_EACH_DIR.mkdir(parents=True, exist_ok=True)
+    SCRAPED_ALL_DIR.mkdir(parents=True, exist_ok=True)
+
+
+กำหนดรายชื่อตำแหน่งงานที่ต้องการค้นหา และสร้าง URL สำหรับแต่ละแพลตฟอร์ม
+โดยวนซ้ำ (List Comprehension) จาก JOBS_LIST
+
+JOBS_LIST = ['Data Scientist', 'Data Analyst', 'Data Engineer']
+
+SEARCH_URLS = {
+    "JobThai": [
+        [job_title, f"https://www.jobthai.com/th/jobs?keyword={job_title}&page=1"]
+        for job_title in JOBS_LIST          # สร้าง URL ของแต่ละตำแหน่งงานอัตโนมัติ
+    ],
+    "JobsDB": [
+        [job_title, f"https://th.jobsdb.com/th/{job_title}-jobs"]
+        for job_title in JOBS_LIST
+    ],
+    "JOBBKK": [
+        [job_title, f"https://jobbkk.com/jobs/lists/1/หางาน,{job_title},..."]
+        for job_title in JOBS_LIST
+    ],
+}
+
+กำหนด SKILLS เป็น Dictionary ที่แมปชื่อทักษะกับคำที่ใช้ตรวจจับในข้อความ
+(ตัวอย่างบางส่วน)
+
+SKILLS = {
+    "python":           ["python"],
+    "sql & database":   ["sql", "mysql", "postgresql", ...],
+    "machine_learning": ["machine learning", "random forest", "xgboost", ...],
+    "powerbi":          ["power bi", "powerbi", "dax"],
+    "docker":           ["docker"],
+    ...  # มีทั้งหมด 40+ ทักษะ
+}
+
+
+----------------------------------------------------------------
+4.2 ฟังก์ชันดึงข้อมูลงาน (Scraper Functions)
+----------------------------------------------------------------
+
+ระบบส่ง HTTP Request ไปยังเว็บไซต์, วิเคราะห์โครงสร้าง HTML ด้วย
+BeautifulSoup และดึงข้อมูลตำแหน่งงาน บริษัท สถานที่ เงินเดือน และ URL
+
+โครงสร้างหลักของฟังก์ชัน scrape ทั้ง 3 แพลตฟอร์มมีแนวทางเดียวกัน:
+
+def scrape_job_jobthai(SEARCH_URLS, SLEEP_SEC=0.5):
+    collected_frames = []
+
+    for job in SEARCH_URLS["JobThai"]:      # วนซ้ำแต่ละตำแหน่งงาน
+        keyword   = job[0]
+        search_url = job[1]
+
+        all_rows  = []
+        seen_urls = set()                   # ใช้ป้องกันข้อมูลซ้ำ
+
+        for page_no in range(1, 50):        # วนซ้ำแต่ละหน้าผลการค้นหา
+            page_url = search_url.replace("page=1", f"page={page_no}")
+
+            response = requests.get(page_url, headers=headers, timeout=30)
+            soup     = BeautifulSoup(response.text, "html.parser")
+
+            title_cards = soup.select('h2[id^="job-card-item-"]')  # ดึง HTML Card งาน
+            if not title_cards:
+                break                       # หยุดเมื่อไม่มีผลในหน้านั้น
+
+            for card in title_cards:
+                row = parse_card_from_title(card, page_num=page_no, keyword=keyword)
+
+                if row["job_url"] in seen_urls:
+                    continue               # ข้ามรายการที่เคยดึงแล้ว
+
+                seen_urls.add(row["job_url"])
+                all_rows.append(row)
+
+            time.sleep(SLEEP_SEC)          # หน่วงเวลาป้องกันการถูกบล็อก
+
+        # ดึงรายละเอียดเพิ่มเติมจากหน้าของแต่ละงาน
+        for row in all_rows:
+            detail = extract_detail_from_job_page(row["job_url"], headers)
+            row.update(detail)             # เพิ่มข้อมูลทักษะ, จังหวัด ฯลฯ
+            time.sleep(SLEEP_SEC)
+
+        job_df = pd.DataFrame(all_rows)    # แปลงเป็น DataFrame
+        collected_frames.append(job_df)
+
+    final_df = pd.concat(collected_frames, ignore_index=True)
+    return final_df
+
+
+ฟังก์ชัน scrape_job_jobsdb และ scrape_job_jobbkk ใช้โครงสร้าง for loop
+และ logic เดียวกัน ต่างกันที่ CSS selector และรูปแบบ URL ของแต่ละเว็บไซต์
+
+ตัวอย่าง CSS selector ที่ต่างกันในแต่ละแพลตฟอร์ม:
+
+# JobThai — ใช้ attribute selector
+soup.select('h2[id^="job-card-item-"]')
+
+# JobsDB — ใช้ data-automation attribute
+soup.select("article[data-automation='normalJob']")
+
+# JOBBKK — ใช้ class name
+soup.select("div.joblist-pos.jobbkk-list-company")
+
+
+----------------------------------------------------------------
+4.3 ฟังก์ชันตรวจจับทักษะ (Skill Extraction)
+----------------------------------------------------------------
+
+ระบบวิเคราะห์ข้อความรายละเอียดงาน (job description) เพื่อตรวจจับทักษะ
+โดยใช้ Regular Expression ให้ตรงกับคำทั้งคำ (word boundary)
+
+    def variant_matches_text(variant: str, normalized_text: str) -> bool:
+        # ตรวจสอบว่า variant ปรากฏในข้อความโดยไม่ติดกับตัวอักษรหรือตัวเลขอื่น
+        pattern = rf"(?<![a-z0-9]){re.escape(variant)}(?![a-z0-9])"
+        return re.search(pattern, normalized_text) is not None
+
+
+    def extract_skills(text: str) -> dict:
+        # ทำให้ข้อความเป็นตัวพิมพ์เล็ก และลบอักขระพิเศษ
+        normalized_text = re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+        matched = []
+
+        # วนซ้ำตรวจสอบทุกทักษะใน SKILLS
+        for skill_name, variants in SKILLS.items():
+            if any(variant_matches_text(v, normalized_text) for v in variants):
+                matched.append(skill_name)   # บันทึกทักษะที่พบ
+
+        # สร้าง Dictionary ผลลัพธ์: คอลัมน์ 0/1 สำหรับแต่ละทักษะ
+        skill_flags = {f"skill_{name}": int(name in matched) for name in SKILLS}
+
+        return {
+            "matched_skills":      "|".join(matched),  # รายชื่อทักษะที่พบ คั่นด้วย |
+            "matched_skill_count": len(matched),        # จำนวนทักษะที่พบ
+            **skill_flags,                              # คอลัมน์ skill_python, skill_sql, ...
+        }
+
+
+----------------------------------------------------------------
+4.4 ฟังก์ชันทำความสะอาดข้อมูล (Data Cleaning)
+----------------------------------------------------------------
+
+หลังจากดึงข้อมูลเสร็จสิ้น ระบบทำความสะอาดข้อมูลให้อยู่ในรูปแบบมาตรฐาน
+ได้แก่ การแปลงวันที่ การแยกช่วงเงินเดือน และการจัดรูปแบบชื่อจังหวัด
+
+ตัวอย่างฟังก์ชันทำความสะอาดข้อมูลของ JobThai:
+
+def clean_data_jobthai(job_df: pd.DataFrame) -> pd.DataFrame:
+
+    # (1) ลบคำนำหน้าจังหวัด "จ." ออกจากชื่อจังหวัด
+    job_df["province_name"] = (
+        job_df["province_name"].astype(str)
+        .str.replace(r"^\s*จ\.\s*", "", regex=True)
+        .str.strip()
+    )
+
+    # (2) แยกเงินเดือนขั้นต่ำและสูงสุดจากข้อความ เช่น "25,000 - 35,000 บาท"
+    salary_parts = job_df["salary"].str.extract(
+        r"(\d{1,3}(?:,\d{3})*)\s*-\s*(\d{1,3}(?:,\d{3})*)"
+    )
+    job_df["min_salary"] = salary_parts[0].str.replace(",", "")
+    job_df["max_salary"] = salary_parts[1].str.replace(",", "")
+
+    # (3) แปลงวันที่ภาษาไทย เช่น "5 ก.พ. 69" เป็น "02/05/2026"
+    job_df["posted_date"] = job_df["posted_date"].apply(parse_thai_short_date)
+
+    return job_df
+
+
+ฟังก์ชัน clean_data_jobsdb และ clean_jobbkk_data มีโครงสร้างคล้ายกัน
+แต่แตกต่างกันที่รูปแบบวันที่และรูปแบบเงินเดือนของแต่ละแพลตฟอร์ม
+
+ตัวอย่างการแปลงวันที่แบบ Relative ของ JobsDB ("3 วันที่ผ่านมา"):
+
+    def parse_jobsdb_relative_posted_date(value: str) -> str:
+        current = datetime.now()
+
+        day_match = re.search(r"(\d+)\s*วันที่ผ่านมา", value)
+        if day_match:
+            dt = current - timedelta(days=int(day_match.group(1)))
+            return dt.strftime("%m/%d/%Y")   # แปลงเป็น MM/DD/YYYY
+
+        week_match = re.search(r"(\d+)\s*สัปดาห์ที่ผ่านมา", value)
+        if week_match:
+            dt = current - timedelta(days=7 * int(week_match.group(1)))
+            return dt.strftime("%m/%d/%Y")
+
+        return ""
+
+
+----------------------------------------------------------------
+4.5 การรวมข้อมูลและส่งออกไฟล์ผลลัพธ์ (Concat & Export)
+----------------------------------------------------------------
+
+หลังจาก scrape และทำความสะอาดข้อมูลของทุกแพลตฟอร์มเสร็จสิ้นแล้ว
+ระบบจะอ่านไฟล์ CSV ทั้งหมดจากโฟลเดอร์ Scraped_Each แล้วรวมเป็นไฟล์เดียว
+
+# อ่านไฟล์ CSV ทั้งหมดในโฟลเดอร์
+csv_files = sorted(SCRAPED_EACH_DIR.glob("*.csv"))
+
+# อ่านและรวม DataFrame ทุกไฟล์
+dataframes  = [pd.read_csv(file) for file in csv_files]
+job_all_df  = pd.concat(dataframes, ignore_index=True)
+
+# บันทึกไฟล์ 2 แบบ: แบบชื่อคงที่ และแบบมี Timestamp กำกับ
+output_static      = SCRAPED_ALL_DIR / "jobs_all_scraped.csv"
+output_timestamped = SCRAPED_ALL_DIR / f"jobs_all_scraped_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+job_all_df.to_csv(output_static,      index=False, encoding="utf-8-sig")
+job_all_df.to_csv(output_timestamped, index=False, encoding="utf-8-sig")
+
+print(f"Concatenated {len(csv_files)} files -> {len(job_all_df)} rows")
+
+
+การบันทึก 2 ไฟล์พร้อมกันช่วยให้สามารถใช้ชื่อไฟล์คงที่ใน Streamlit Dashboard
+และยังมีไฟล์ที่มี Timestamp สำหรับเก็บประวัติการดึงข้อมูลในแต่ละครั้ง
+
+================================================================
