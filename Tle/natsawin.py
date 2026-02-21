@@ -271,6 +271,7 @@ with f1:
     )
     st.bar_chart(counts,color="#2563EB")
 
+
 #กราฟวงกลม
 with f2:
     st.subheader("Job Per Web")
@@ -305,47 +306,14 @@ with f3:
     salary_role.index.name = "ตำแหน่ง"
     st.bar_chart(salary_role,color="#10B981")
 
-st.subheader("Job Skill")
-skill_cols = [c for c in df_show.columns if c.startswith("skill_")]
-
-skill_counts = df_show[skill_cols].sum().sort_values(ascending=True)
-
-nice = {
-    "python":"Python",
-    "sql & database":"SQL & Database",
-    "c++":"C++",
-    "mongodb":"MongoDB",
-    "aws":"AWS",
-    "etl":"ETL",
-    "gcp":"GCP",
-}
-
-skill_counts.index = (
-    skill_counts.index
-    .str.replace("skill_","",regex=False)
-    .str.replace("_"," ")
-    .str.lower()
-    .map(lambda x: nice.get(x,x.capitalize()))
-)
-skill_df = skill_counts.reset_index()
-skill_df.columns = ["Skill","Count"]
-
-fig2 = px.treemap(
-    skill_df,
-    path=["Skill"],
-    values="Count"
-)
-
-fig2.update_traces(
-hovertemplate="<b>%{label}</b><br>จำนวน: %{value} คน<extra></extra>"
-)
-st.plotly_chart(fig2, use_container_width=True)
 
 #graph3
-st.subheader("Job Per Province")
-max_val = province_counts["jobs"].quantile(0.95)
+g1,g2 = st.columns([1,2])
+with g1:
+    st.subheader("Job Per Province")
+    max_val = province_counts["jobs"].quantile(0.95)
 
-fig = px.choropleth(
+    fig = px.choropleth(
     province_counts,
     geojson=geo,
     locations="province",
@@ -355,13 +323,50 @@ fig = px.choropleth(
     range_color=(0,max_val)
 )
 
-fig.update_geos(fitbounds="locations", visible=False)
+    fig.update_geos(fitbounds="locations", visible=False)
 
-fig.update_traces(
+    fig.update_traces(
     hovertemplate="<b>%{location}</b><br>จำนวนงาน %{z} ตำแหน่ง<extra></extra>"
 )
 
-st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
+
+with g2:
+    st.subheader("Job Skill")
+    skill_cols = [c for c in df_show.columns if c.startswith("skill_")]
+
+    skill_counts = df_show[skill_cols].sum().sort_values(ascending=True)
+
+    nice = {
+        "python":"Python",
+        "sql & database":"SQL & Database",
+        "c++":"C++",
+        "mongodb":"MongoDB",
+        "aws":"AWS",
+        "etl":"ETL",
+        "gcp":"GCP",
+    }
+
+    skill_counts.index = (
+        skill_counts.index
+        .str.replace("skill_","",regex=False)
+        .str.replace("_"," ")
+        .str.lower()
+        .map(lambda x: nice.get(x,x.capitalize()))
+    )
+    skill_df = skill_counts.reset_index()
+    skill_df.columns = ["Skill","Count"]
+
+    fig2 = px.treemap(
+    skill_df,
+    path=["Skill"],
+    values="Count"
+    )
+
+    fig2.update_traces(
+    hovertemplate="<b>%{label}</b><br>จำนวน: %{value} คน<extra></extra>"
+    )
+    st.plotly_chart(fig2, use_container_width=True)
 
 # ================= TABLE =================
 st.subheader("Job Table")
