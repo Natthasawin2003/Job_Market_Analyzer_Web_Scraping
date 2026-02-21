@@ -24,12 +24,12 @@ CSV เพื่อนำไปวิเคราะห์ต่อบน Stream
 
 กำหนดโฟลเดอร์จัดเก็บผลลัพธ์โดยอัตโนมัติ พร้อมสร้างหากยังไม่มีอยู่
 
-    BASE_DIR          = Path(__file__).resolve().parent
-    SCRAPED_EACH_DIR  = BASE_DIR / "Scraped_Each"   # เก็บไฟล์แยกแต่ละแพลตฟอร์ม
-    SCRAPED_ALL_DIR   = BASE_DIR / "Scraped_All"    # เก็บไฟล์รวมทุกแพลตฟอร์ม
+BASE_DIR          = Path(__file__).resolve().parent
+SCRAPED_EACH_DIR  = BASE_DIR / "Scraped_Each"   # เก็บไฟล์แยกแต่ละแพลตฟอร์ม
+SCRAPED_ALL_DIR   = BASE_DIR / "Scraped_All"    # เก็บไฟล์รวมทุกแพลตฟอร์ม
 
-    SCRAPED_EACH_DIR.mkdir(parents=True, exist_ok=True)
-    SCRAPED_ALL_DIR.mkdir(parents=True, exist_ok=True)
+SCRAPED_EACH_DIR.mkdir(parents=True, exist_ok=True)
+SCRAPED_ALL_DIR.mkdir(parents=True, exist_ok=True)
 
 
 กำหนดรายชื่อตำแหน่งงานที่ต้องการค้นหา และสร้าง URL สำหรับแต่ละแพลตฟอร์ม

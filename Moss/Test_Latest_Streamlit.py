@@ -5,8 +5,38 @@ import matplotlib.pyplot as plt
 import datetime
 import plotly.express as px
 import json
+from pathlib import Path
+import re
 
 plt.rcParams["font.family"] = "Tahoma"
+
+
+def get_latest_scrape_datetime_text(scraped_dir: Path) -> str:
+    date_pattern = re.compile(r"(\d{8})(?:_(\d{6}))?")
+    latest_dt = None
+
+    for csv_path in scraped_dir.glob("*.csv"):
+        match = date_pattern.search(csv_path.stem)
+        if not match:
+            continue
+
+        date_part = match.group(1)
+        time_part = match.group(2) or "000000"
+
+        try:
+            current_dt = datetime.datetime.strptime(
+                f"{date_part}{time_part}", "%Y%m%d%H%M%S"
+            )
+        except ValueError:
+            continue
+
+        if latest_dt is None or current_dt > latest_dt:
+            latest_dt = current_dt
+
+    if latest_dt is None:
+        return "Latest update: N/A"
+
+    return f"Latest update: {latest_dt:%Y-%m-%d %H:%M}"
 
 st.set_page_config(layout="wide")
 
@@ -14,28 +44,33 @@ st.markdown("""
 <style>
             
 .chart-card{
-    background:#b3e5fc;
+    background:#eef2ff;
     padding:18px;
     border-radius:14px;
-    box-shadow:0 4px 14px rgba(0,0,0,0.08);
+    box-shadow:0 6px 18px rgba(15,23,42,0.08);
     margin-bottom:12px;
 }
             
 /* main background */
 .stApp {
-    background-color: #e1f5fe;
+    background-color: #f8fafc;
 }
 
 /* sidebar */
 [data-testid="stSidebar"]{
-    background-color:#81d4fa;
+    background-color:#e2e8f0;
 }
 
 [data-testid="stMetric"]{
-    background:#b3e5fc;
+    background:#ffffff;
     padding:18px;
     border-radius:14px;
-    box-shadow:0 4px 14px rgba(0,0,0,0.08);
+    box-shadow:0 6px 18px rgba(15,23,42,0.08);
+    border:1px solid #e2e8f0;
+}
+
+h1, h2, h3 {
+    color:#1e293b;
 }
 
 /* hover animation */
@@ -55,20 +90,47 @@ st.markdown("""
 #ฟิวเตอร์
 st.sidebar.title("FILTER")
 
-keyword = st.sidebar.text_input("Search job")
+def reset_filters():
+    st.session_state["keyword_filter"] = ""
+    st.session_state["use_salary_filter"] = False
+    st.session_state["min_salary_filter"] = 0
+    st.session_state["date_range_filter"] = ()
+    st.session_state["top_skill_n_filter"] = 12
+    st.session_state["province_filter"] = "All"
+    st.session_state["web_filter"] = "All"
 
-use_salary = st.sidebar.checkbox("Filter by salary")
+
+st.sidebar.button(
+    "Reset Filters",
+    use_container_width=True,
+    on_click=reset_filters,
+)
+
+keyword = st.sidebar.text_input("Search job", key="keyword_filter")
+
+use_salary = st.sidebar.checkbox("Filter by salary", key="use_salary_filter")
 if use_salary :
     salary = st.sidebar.number_input(
         "Min salary",
         min_value=0,
         value=0,
-        step=5000
+        step=5000,
+        key="min_salary_filter",
     )
 
 date_range = st.sidebar.date_input(
     "Posted date range",
-    value=()
+    value=(),
+    key="date_range_filter",
+)
+
+top_skill_n = st.sidebar.slider(
+    "Top skills in treemap",
+    min_value=5,
+    max_value=25,
+    value=12,
+    step=1,
+    key="top_skill_n_filter",
 )
 
 # ตัวดึงข้อมูลจากไฟล์ CSV
@@ -80,10 +142,10 @@ df_all = df.copy()
 df["posted_date"] = pd.to_datetime(df["posted_date"],errors="coerce")
 
 province_list = ["All"] + sorted(df["province_name"].dropna().unique().tolist())
-province = st.sidebar.selectbox("Province", province_list)
+province = st.sidebar.selectbox("Province", province_list, key="province_filter")
 
 web_list = ["All"] + sorted(df["domain"].dropna().unique().tolist())
-web = st.sidebar.selectbox("Website", web_list)
+web = st.sidebar.selectbox("Website", web_list, key="web_filter")
 
 #ฟิวเตอร์เหมือนกันแค่ แค่นำข้อมูลมาใช้ด้วย
 if keyword:
@@ -228,8 +290,14 @@ elif isinstance(date_range, datetime.date):
     start = pd.to_datetime(date_range)
     df_show = df_show[df_show["posted_date"]>=start]
 
+latest_update_text = get_latest_scrape_datetime_text(Path("Moss/Scraped_All"))
+
 #กราฟ 1
-st.title("📊 Job Market Dashboard") 
+st.title(
+    "Job Market Dashboard\n"
+    "(Data Science & Data Engineer & Data Analyst)\n"
+    f"{latest_update_text}"
+)
 c1,c2,c3,c4 = st.columns(4)
 
 #จำนวนงานทั้งหมด
@@ -253,6 +321,9 @@ else:
     percent = 0
 c4.metric("Show Salary", "%.1f %%" % percent)
 
+if df_show.empty:
+    st.warning("No jobs found for the current filters.")
+
 #กราฟ 2
 f1,f2,f3 = st.columns([1,1,1])
 
@@ -269,26 +340,67 @@ with f1:
     .sort_index()
     .rename("จำนวนงาน")   
     )
-    st.bar_chart(counts,color="#2563EB")
+    if counts.sum() > 0:
+        st.bar_chart(counts, color="#4f46e5", height=420)
+    else:
+        st.info("No salary data for current filters")
 
 
 #กราฟวงกลม
 with f2:
     st.subheader("Job Per Web")
 
-    web_counts = df_show["domain"].value_counts()
+    web_keyword = df_show[["domain", "keyword"]].dropna().copy()
 
-    if len(web_counts) > 0:
-        fig, ax = plt.subplots()
+    if len(web_keyword) > 0:
+        web_keyword.columns = ["Website", "Keyword"]
+        web_keyword["Keyword"] = web_keyword["Keyword"].astype(str).str.strip()
 
-        ax.pie(
-            web_counts,
-            labels=web_counts.index,
-            autopct=lambda p: f'{p:.1f}%\n({int(round(p/100*web_counts.sum()))})'
+        top_keywords = web_keyword["Keyword"].value_counts().head(8).index
+        web_keyword["Keyword"] = np.where(
+            web_keyword["Keyword"].isin(top_keywords),
+            web_keyword["Keyword"],
+            "Other"
         )
 
-        ax.axis("equal")   
-        st.pyplot(fig)
+        web_keyword_counts = (
+            web_keyword.groupby(["Website", "Keyword"], as_index=False)
+            .size()
+            .rename(columns={"size": "Jobs"})
+        )
+
+        fig_web = px.sunburst(
+            web_keyword_counts,
+            path=["Website", "Keyword"],
+            values="Jobs",
+            color="Website",
+            color_discrete_sequence=["#4338ca", "#6366f1", "#818cf8", "#a5b4fc"],
+            template="plotly_white",
+        )
+
+        fig_web.update_traces(
+            textinfo="label+percent parent",
+            marker_line_width=1,
+            marker_line_color="#f8fafc",
+            hovertemplate="<b>%{label}</b><br>Jobs: %{value:,}<br>Share in parent: %{percentParent}<extra></extra>",
+        )
+
+        fig_web.update_layout(
+            height=420,
+            margin=dict(l=0, r=0, t=8, b=0),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+        )
+
+        st.plotly_chart(
+            fig_web,
+            use_container_width=True,
+            config={
+                "displayModeBar": False,
+                "displaylogo": False,
+                "scrollZoom": False,
+            },
+        )
     else:
         st.write("No data")
 
@@ -303,70 +415,148 @@ with f3:
     .tail(15)
     .rename("ค่าเฉลี่ยเงินเดือน")
     )
+    salary_role = salary_role.dropna()
     salary_role.index.name = "ตำแหน่ง"
-    st.bar_chart(salary_role,color="#10B981")
+    if len(salary_role) > 0:
+        st.bar_chart(salary_role, color="#0f766e", height=420)
+    else:
+        st.info("No position salary data for current filters")
 
 
 #graph3
-g1,g2 = st.columns([1,2])
+g1,g2 = st.columns([1.2,1.8])
 with g1:
     st.subheader("Job Per Province")
     max_val = province_counts["jobs"].quantile(0.95)
+    max_val = float(max(max_val, 1))
 
     fig = px.choropleth(
-    province_counts,
-    geojson=geo,
-    locations="province",
-    featureidkey="properties.name",   # <-- สำคัญ
-    color="jobs",
-    color_continuous_scale="Reds",
-    range_color=(0,max_val)
-)
+        province_counts,
+        geojson=geo,
+        locations="province",
+        featureidkey="properties.name",
+        color="jobs",
+        color_continuous_scale="PuBu",
+        range_color=(0, max_val),
+        labels={"jobs": "Jobs"},
+        template="plotly_white",
+    )
 
-    fig.update_geos(fitbounds="locations", visible=False)
+    fig.update_geos(
+        fitbounds="locations",
+        visible=False,
+        projection_type="mercator",
+        center={"lat": 15.5, "lon": 101.0},
+        projection_scale=6.2,
+        bgcolor="rgba(0,0,0,0)",
+    )
 
     fig.update_traces(
-    hovertemplate="<b>%{location}</b><br>จำนวนงาน %{z} ตำแหน่ง<extra></extra>"
-)
+        marker_line_width=1.4,
+        marker_line_color="#475569",
+        hovertemplate="<b>%{location}</b><br>Jobs: %{z:,.0f}<extra></extra>",
+    )
 
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=8, b=0),
+        height=620,
+        dragmode=False,
+        coloraxis_colorbar=dict(
+            title="Jobs",
+            thickness=14,
+            len=0.62,
+            y=0.5,
+            x=1.01,
+            nticks=3,
+            bgcolor="rgba(255,255,255,0.8)",
+        ),
+        coloraxis_showscale=False,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "displaylogo": False,
+            "scrollZoom": False,
+            "modeBarButtonsToRemove": ["zoomInGeo", "zoomOutGeo", "resetGeo"],
+        },
+    )
 
 with g2:
     st.subheader("Job Skill")
     skill_cols = [c for c in df_show.columns if c.startswith("skill_")]
 
-    skill_counts = df_show[skill_cols].sum().sort_values(ascending=True)
+    if len(skill_cols) == 0:
+        st.info("No skill columns found")
+    else:
+        skill_counts = df_show[skill_cols].sum().sort_values(ascending=False)
+        skill_counts = skill_counts[skill_counts > 0]
 
-    nice = {
-        "python":"Python",
-        "sql & database":"SQL & Database",
-        "c++":"C++",
-        "mongodb":"MongoDB",
-        "aws":"AWS",
-        "etl":"ETL",
-        "gcp":"GCP",
-    }
+        if len(skill_counts) > top_skill_n:
+            skill_counts = skill_counts.head(top_skill_n)
 
-    skill_counts.index = (
-        skill_counts.index
-        .str.replace("skill_","",regex=False)
-        .str.replace("_"," ")
-        .str.lower()
-        .map(lambda x: nice.get(x,x.capitalize()))
-    )
-    skill_df = skill_counts.reset_index()
-    skill_df.columns = ["Skill","Count"]
+        if len(skill_counts) == 0:
+            st.info("No skill data for current filters")
+        else:
+            nice = {
+                "python":"Python",
+                "sql & database":"SQL & Database",
+                "c++":"C++",
+                "mongodb":"MongoDB",
+                "aws":"AWS",
+                "etl":"ETL",
+                "gcp":"GCP",
+            }
 
-    fig2 = px.treemap(
-    skill_df,
-    path=["Skill"],
-    values="Count"
-    )
+            def format_skill_name(skill_name):
+                cleaned = (
+                    str(skill_name)
+                    .replace("skill_", "")
+                    .replace("_", " ")
+                    .lower()
+                )
+                return nice.get(cleaned, cleaned.capitalize())
 
-    fig2.update_traces(
-    hovertemplate="<b>%{label}</b><br>จำนวน: %{value} คน<extra></extra>"
-    )
-    st.plotly_chart(fig2, use_container_width=True)
+            skill_counts.index = [format_skill_name(name) for name in skill_counts.index]
+            skill_df = skill_counts.reset_index()
+            skill_df.columns = ["Skill","Count"]
+
+            fig2 = px.treemap(
+                skill_df,
+                path=["Skill"],
+                values="Count",
+                color="Count",
+                color_continuous_scale="PuBuGn",
+                template="plotly_white",
+            )
+
+            fig2.update_traces(
+                hovertemplate="<b>%{label}</b><br>จำนวน: %{value} คน<extra></extra>",
+                marker_line_width=1,
+                marker_line_color="#f8fafc",
+                textfont_size=14,
+            )
+
+            fig2.update_layout(
+                height=620,
+                margin=dict(l=0, r=0, t=8, b=0),
+                coloraxis_showscale=False,
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+            )
+
+            st.plotly_chart(
+                fig2,
+                use_container_width=True,
+                config={
+                    "displayModeBar": False,
+                    "displaylogo": False,
+                    "scrollZoom": False,
+                },
+            )
 
 # ================= TABLE =================
 st.subheader("Job Table")
@@ -379,12 +569,9 @@ st.subheader("Job Table")
 #ax.set_ylabel("")
 #st.pyplot(fig)
 
-# clickable link
-def make_clickable(url):
-    return f'<a target="_blank" href="{url}">open job</a>'
-
+# prepare url for clickable table column
 if "job_url" in df.columns:
-    df_show["job_url"] = df_show["job_url"].apply(make_clickable)
+    df_show["job_url"] = df_show["job_url"].fillna("").astype(str)
 
 df_show = df_show.rename(columns={
     "domain":"Website",
@@ -406,15 +593,41 @@ show_cols = [c for c in [
     if c in df_show.columns
 ]
 
-st.markdown("""
-<style>
-table th, table td {
-    text-align: left !important;
-}
-</style>
-""", unsafe_allow_html=True)
+table_df = df_show[show_cols].copy()
 
-st.write(
-    df_show[show_cols].to_html(escape=False,index=False),
-    unsafe_allow_html=True
+if "Posted Date" in table_df.columns:
+    posted_dt = pd.to_datetime(table_df["Posted Date"], errors="coerce")
+    table_df = (
+        table_df.assign(_posted_sort=posted_dt)
+        .sort_values("_posted_sort", ascending=False)
+        .drop(columns=["_posted_sort"])
+    )
+    table_df["Posted Date"] = pd.to_datetime(
+        table_df["Posted Date"], errors="coerce"
+    ).dt.strftime("%Y-%m-%d")
+
+download_name = f"filtered_jobs_{datetime.datetime.now():%Y%m%d_%H%M%S}.csv"
+st.download_button(
+    "Download filtered data (CSV)",
+    data=table_df.to_csv(index=False).encode("utf-8-sig"),
+    file_name=download_name,
+    mime="text/csv",
 )
+
+column_config = {}
+if "Link" in table_df.columns:
+    column_config["Link"] = st.column_config.LinkColumn(
+        "Link",
+        display_text="open job"
+    )
+
+if table_df.empty:
+    st.info("No rows to show for current filters")
+else:
+    st.dataframe(
+        table_df,
+        use_container_width=True,
+        height=420,
+        hide_index=True,
+        column_config=column_config,
+    )
