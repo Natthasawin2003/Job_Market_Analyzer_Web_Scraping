@@ -212,15 +212,15 @@ c2.metric("Avg Salary", int(df_show["mid_salary"].mean(skipna=True))
 )
 c3.metric("Companies", df_show["company"].nunique())
 
-if len(df)>0:
-    percent = df_show["mid_salary"].notna().sum()/len(df)*100
+if len(df_show)>0:
+    percent = df_show["mid_salary"].notna().sum()/len(df_show)*100
 else:
     percent = 0
 
 c4.metric("Show Salary", "%.1f %%" % percent)
 
 # ================= MAIN GRAPH AREA =================
-big,side = st.columns([3,1])
+big,side,side2 = st.columns([1,1,1])
 
 # ----- SALARY HISTOGRAM PRO -----
 with big:
@@ -236,7 +236,7 @@ with big:
 
 # ----- PROVINCE COUNT -----
 with side:
-    st.subheader("Job per Web")
+    st.subheader("Job Per Web")
 
     web_counts = df_show["domain"].value_counts()
 
@@ -253,64 +253,9 @@ with side:
         st.pyplot(fig)
     else:
         st.write("No data")
-# ================= SECOND ROW =================
-g1,g2 = st.columns([2.5,1])
 
-# ----- COMPANY GRAPH -----
-with g1:
-    st.subheader("Job Skill")
-    skill_cols = [c for c in df_show.columns if c.startswith("skill_")]
-
-    skill_counts = df_show[skill_cols].sum().sort_values(ascending=True)
-
-    nice = {
-        "python":"Python",
-        "sql & database":"SQL & Database",
-        "c++":"C++",
-        "mongodb":"MongoDB",
-        "aws":"AWS",
-        "etl":"ETL",
-        "gcp":"GCP",
-    }
-
-    skill_counts.index = (
-        skill_counts.index
-        .str.replace("skill_","",regex=False)
-        .str.replace("_"," ")
-        .str.lower()
-        .map(lambda x: nice.get(x,x.capitalize()))
-    )
-    skill_df = skill_counts.reset_index()
-    skill_df.columns = ["Skill","Count"]
-
-    fig2 = px.treemap(
-        skill_df,
-        path=["Skill"],
-        values="Count"
-    )
-
-    fig2.update_traces(
-    hovertemplate="<b>%{label}</b><br>จำนวน: %{value} คน<extra></extra>"
-    )
-    st.plotly_chart(fig2, use_container_width=True)
-
-# ----- SALARY BUCKET (IMPORTANT) -----
-with g2:
-    st.subheader("Jobs by province")
-    counts = df_show["province_name"].value_counts()
-    top = counts.head(6)
-    others = counts.iloc[6:].sum()
-    if others > 0:
-        top["จังหวัดอื่นๆ"] = others
-    top = top.sort_values()
-    fig, ax = plt.subplots(figsize=(6,6))
-    top.plot.barh(ax=ax)
-    ax.set_ylabel("")   
-    st.pyplot(fig)
-
-h1,h2 = st.columns(2)
-
-with h1:
+with side2:
+    st.subheader("AvG Salary For Each Position.")
     salary_role = (
     df_show.groupby("keyword")["mid_salary"]
     .mean()
@@ -318,26 +263,46 @@ with h1:
     .tail(15)
     )
     st.bar_chart(salary_role)
+# ================= SECOND ROW =================
+# ----- COMPANY GRAPH -----
+st.subheader("Job Skill")
+skill_cols = [c for c in df_show.columns if c.startswith("skill_")]
 
-with h2:
-    st.subheader("Job per Web")
+skill_counts = df_show[skill_cols].sum().sort_values(ascending=True)
 
-    web_counts = df_show["domain"].value_counts()
+nice = {
+    "python":"Python",
+    "sql & database":"SQL & Database",
+    "c++":"C++",
+    "mongodb":"MongoDB",
+    "aws":"AWS",
+    "etl":"ETL",
+    "gcp":"GCP",
+}
 
-    if len(web_counts) > 0:
-        fig, ax = plt.subplots()
+skill_counts.index = (
+    skill_counts.index
+    .str.replace("skill_","",regex=False)
+    .str.replace("_"," ")
+    .str.lower()
+    .map(lambda x: nice.get(x,x.capitalize()))
+)
+skill_df = skill_counts.reset_index()
+skill_df.columns = ["Skill","Count"]
 
-        ax.pie(
-            web_counts,
-            labels=web_counts.index,
-            autopct=lambda p: f'{p:.1f}%\n({int(round(p/100*web_counts.sum()))})'
-        )
+fig2 = px.treemap(
+    skill_df,
+    path=["Skill"],
+    values="Count"
+)
 
-        ax.axis("equal")   # ทำให้วงกลมไม่เบี้ยว
-        st.pyplot(fig)
-    else:
-        st.write("No data")
+fig2.update_traces(
+hovertemplate="<b>%{label}</b><br>จำนวน: %{value} คน<extra></extra>"
+)
+st.plotly_chart(fig2, use_container_width=True)
 
+#graph3
+st.subheader("Job Per Province")
 max_val = province_counts["jobs"].quantile(0.95)
 
 fig = px.choropleth(
