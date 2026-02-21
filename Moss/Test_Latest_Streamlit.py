@@ -124,15 +124,6 @@ date_range = st.sidebar.date_input(
     key="date_range_filter",
 )
 
-top_skill_n = st.sidebar.slider(
-    "Top skills in treemap",
-    min_value=5,
-    max_value=25,
-    value=12,
-    step=1,
-    key="top_skill_n_filter",
-)
-
 # ตัวดึงข้อมูลจากไฟล์ CSV
 df = pd.read_csv("G:\\Users\\Moss\\Documents\\PYTHON_PROJECT\\Job_Market_Analyzer_Web_Scraping\\Moss\\Scraped_All\\jobs_all_scraped.csv")
 
@@ -140,6 +131,24 @@ df["mid_salary"] = df[["min_salary","max_salary"]].mean(axis=1)
 df_all = df.copy()
 
 df["posted_date"] = pd.to_datetime(df["posted_date"],errors="coerce")
+
+skill_cols_all = [c for c in df.columns if c.startswith("skill_")]
+skill_slider_max = max(5, len(skill_cols_all))
+
+if "top_skill_n_filter" in st.session_state:
+    st.session_state["top_skill_n_filter"] = max(
+        5,
+        min(st.session_state["top_skill_n_filter"], skill_slider_max)
+    )
+
+top_skill_n = st.sidebar.slider(
+    "Top skills in treemap",
+    min_value=5,
+    max_value=skill_slider_max,
+    value=min(12, skill_slider_max),
+    step=1,
+    key="top_skill_n_filter",
+)
 
 province_list = ["All"] + sorted(df["province_name"].dropna().unique().tolist())
 province = st.sidebar.selectbox("Province", province_list, key="province_filter")
@@ -382,7 +391,7 @@ with f2:
             textinfo="label+percent parent",
             marker_line_width=1,
             marker_line_color="#f8fafc",
-            hovertemplate="<b>%{label}</b><br>Jobs: %{value:,}<br>Share in parent: %{percentParent}<extra></extra>",
+            hovertemplate="<b>%{label}</b><br>Jobs: %{value:,}<br>Share in parent: %{percentParent:.1%}<extra></extra>",
         )
 
         fig_web.update_layout(
