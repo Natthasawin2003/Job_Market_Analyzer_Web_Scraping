@@ -438,7 +438,7 @@ with f3:
 g1,g2 = st.columns([1.2,1.8])
 with g1:
     st.subheader("Job Per Province")
-    max_val = province_counts["jobs"].quantile(0.95)
+    max_val = province_counts["jobs"].quantile(0.98)
     max_val = float(max(max_val, 1))
 
     fig = px.choropleth(
