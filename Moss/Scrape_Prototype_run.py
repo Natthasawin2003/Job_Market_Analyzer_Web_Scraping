@@ -624,7 +624,8 @@ def scrape_job_jobthai(
 # ## JobThai Scraper Run
 
 # %%
-jobthai_scraped_df = scrape_job_jobthai(SEARCH_URLS)
+if "JobThai" in SEARCH_URLS:
+    jobthai_scraped_df = scrape_job_jobthai(SEARCH_URLS)
 
 # %% [markdown]
 # ## Clean Data JobThai Function
@@ -703,8 +704,9 @@ def clean_data_jobthai(job_df: pd.DataFrame) -> pd.DataFrame:
 # ## Clean & Export Scraped JobThai Run
 
 # %%
-jobthai_scraped_df = clean_data_jobthai(jobthai_scraped_df)
-jobthai_scraped_df.to_csv(SCRAPED_EACH_DIR / "jobthai_jobs.csv", index=False, encoding="utf-8-sig")
+if "JobThai" in SEARCH_URLS:
+    jobthai_scraped_df = clean_data_jobthai(jobthai_scraped_df)
+    jobthai_scraped_df.to_csv(SCRAPED_EACH_DIR / "jobthai_jobs.csv", index=False, encoding="utf-8-sig")
 
 # %% [markdown]
 # ## JobsDB Scraper Function
@@ -1068,7 +1070,8 @@ def scrape_job_jobsdb(search_url: str = "", search_location: str = "", max_pages
 # ## JobsDB Scraper Run
 
 # %%
-jobsdb_scraped_df = scrape_job_jobsdb(SEARCH_URLS)
+if "JobsDB" in SEARCH_URLS:
+    jobsdb_scraped_df = scrape_job_jobsdb(SEARCH_URLS)
 
 # %% [markdown]
 # ## JobsDB Clean Function
@@ -1142,8 +1145,9 @@ def clean_data_jobsdb(df: pd.DataFrame) -> pd.DataFrame:
 # ## JobsDB Clean & Export Run
 
 # %%
-jobsdb_scraped_df = clean_data_jobsdb(jobsdb_scraped_df)
-jobsdb_scraped_df.to_csv(SCRAPED_EACH_DIR / "jobsdb_jobs.csv", index=False, encoding="utf-8-sig")
+if "JobsDB" in SEARCH_URLS:
+    jobsdb_scraped_df = clean_data_jobsdb(jobsdb_scraped_df)
+    jobsdb_scraped_df.to_csv(SCRAPED_EACH_DIR / "jobsdb_jobs.csv", index=False, encoding="utf-8-sig")
 
 # %% [markdown]
 # ## JOBBKK Scraper Function
@@ -1451,7 +1455,8 @@ def scrape_job_jobbkk(
 # ## JOBBKK Scraper Run
 
 # %%
-jobbkk_scraped_df = scrape_job_jobbkk(SEARCH_URLS)
+if "JOBBKK" in SEARCH_URLS:
+    jobbkk_scraped_df = scrape_job_jobbkk(SEARCH_URLS)
 
 # %% [markdown]
 # ## JOBBKK Clean Function
@@ -1483,8 +1488,9 @@ def clean_jobbkk_data(df: pd.DataFrame) -> pd.DataFrame:
 # ## JOBBKK Clean & Export Run
 
 # %%
-jobbkk_scraped_df = clean_jobbkk_data(jobbkk_scraped_df)
-jobbkk_scraped_df.to_csv(SCRAPED_EACH_DIR / "jobbkk_jobs.csv", index=False, encoding="utf-8-sig")
+if "JOBBKK" in SEARCH_URLS:
+    jobbkk_scraped_df = clean_jobbkk_data(jobbkk_scraped_df)
+    jobbkk_scraped_df.to_csv(SCRAPED_EACH_DIR / "jobbkk_jobs.csv", index=False, encoding="utf-8-sig")
 
 # %% [markdown]
 # ## Final output run (Concat all domain data)
