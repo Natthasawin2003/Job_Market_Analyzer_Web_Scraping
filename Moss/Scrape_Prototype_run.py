@@ -5,10 +5,13 @@
 import pandas as pd
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse, urljoin
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 import re
 from datetime import datetime, timedelta
 import time
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -109,9 +112,9 @@ SKILLS = {
 }
 
 SEARCH_URLS = {
-    "JobThai": [[job_title,f"https://www.jobthai.com/th/jobs?keyword={job_title}&page=1&orderBy=RELEVANCE_SEARCH".replace(" ", "%20")] for job_title in JOBS_LIST],
+    # "JobThai": [[job_title,f"https://www.jobthai.com/th/jobs?keyword={job_title}&page=1&orderBy=RELEVANCE_SEARCH".replace(" ", "%20")] for job_title in JOBS_LIST],
     "JobsDB": [[job_title,f"https://th.jobsdb.com/th/{job_title}-jobs".replace(" ", "-")] for job_title in JOBS_LIST],
-    "JOBBKK": [[job_title,f"https://jobbkk.com/jobs/lists/1/หางาน,{job_title},ทุกจังหวัด,ทั้งหมด.html?keyword_type=3&sort=4".replace(" ", "%20")] for job_title in JOBS_LIST],
+    # "JOBBKK": [[job_title,f"https://jobbkk.com/jobs/lists/1/หางาน,{job_title},ทุกจังหวัด,ทั้งหมด.html?keyword_type=3&sort=4".replace(" ", "%20")] for job_title in JOBS_LIST],
 }
 
 KEY_VARIANTS = {
@@ -216,6 +219,12 @@ headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Accept-Language": "th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7",
 }
+
+JOBSDB_PROXIES = {
+    "http": os.getenv("JOBSDB_PROXY_URL", "").strip(),
+    "https": os.getenv("JOBSDB_PROXY_URL", "").strip(),
+}
+JOBSDB_PROXIES = {k: v for k, v in JOBSDB_PROXIES.items() if v}
 
 # For Debugging Start
 print("Search URLs:")
@@ -776,10 +785,77 @@ def guess_province_name(location_text: str) -> str:
     tail = re.sub(r"^(เขต|อ\.|อำเภอ|จ\.|จังหวัด)\s*", "", tail).strip()
     return tail
 
-def extract_job_detail_text(job_url: str) -> str:
+
+def create_retry_session() -> requests.Session:
+    session = requests.Session()
+    retry = Retry(
+        total=3,
+        connect=3,
+        read=3,
+        backoff_factor=1,
+        status_forcelist=[403, 429, 500, 502, 503, 504],
+        allowed_methods=frozenset(["GET", "HEAD"]),
+        respect_retry_after_header=True,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
+def jobsdb_headers(referer: str = "https://th.jobsdb.com/") -> dict:
+    return {
+        "User-Agent": headers["User-Agent"],
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": headers["Accept-Language"],
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Referer": referer,
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+    }
+
+
+def jobsdb_get(session: requests.Session, url: str, referer: str = "https://th.jobsdb.com/") -> requests.Response:
+    last_response = None
+
+    for attempt in range(1, 4):
+        response = session.get(
+            url,
+            headers=jobsdb_headers(referer=referer),
+            timeout=30,
+            proxies=JOBSDB_PROXIES or None,
+        )
+        last_response = response
+
+        if response.status_code != 403:
+            response.raise_for_status()
+            return response
+
+        if attempt < 3:
+            try:
+                session.get(
+                    "https://th.jobsdb.com/",
+                    headers=jobsdb_headers(),
+                    timeout=30,
+                    proxies=JOBSDB_PROXIES or None,
+                )
+            except Exception:
+                pass
+            time.sleep(1.0 * attempt)
+
+    if last_response is not None:
+        last_response.raise_for_status()
+    raise requests.HTTPError("JobsDB request failed without response")
+
+
+def extract_job_detail_text(job_url: str, session: requests.Session | None = None) -> str:
+    active_session = session or create_retry_session()
     try:
-        response = requests.get(job_url, headers=headers, timeout=30)
-        response.raise_for_status()
+        response = jobsdb_get(active_session, job_url, referer="https://th.jobsdb.com/")
     except Exception:
         return ""
 
@@ -865,6 +941,7 @@ def parse_card(card, page_num: int, search_keyword: str) -> dict:
 
 def scrape_job_jobsdb(search_url: str = "", search_location: str = "", max_pages: int = 50, sleep_seconds: float = 0.5) -> pd.DataFrame:
     collected_frames = []
+    session = create_retry_session()
 
     try:
         for job in SEARCH_URLS["JobsDB"]:
@@ -883,8 +960,16 @@ def scrape_job_jobsdb(search_url: str = "", search_location: str = "", max_pages
                     page_url = update_query_in_url(page_url, where=search_location.strip())
 
                 print(f"[Search] Page {page_num}/{max_pages} -> request")
-                response = requests.get(page_url, headers=headers, timeout=30)
-                response.raise_for_status()
+                try:
+                    response = jobsdb_get(session, page_url, referer=search_url)
+                except requests.HTTPError as http_err:
+                    status_code = http_err.response.status_code if http_err.response is not None else None
+                    if status_code == 403:
+                        print("[Warn] JobsDB returned 403 (Forbidden).")
+                        print("[Warn] This is commonly IP-based blocking on cloud runners (e.g., GitHub Actions).")
+                        print("[Warn] Tip: set JOBSDB_PROXY_URL or run JobsDB scraping from a residential/local IP.")
+                        break
+                    raise
 
                 soup = BeautifulSoup(response.text, "html.parser")
                 cards = soup.select("article[data-testid='job-card'], article[data-automation='normalJob']")
@@ -920,7 +1005,7 @@ def scrape_job_jobsdb(search_url: str = "", search_location: str = "", max_pages
             print(f"[Detail] Start detail scrape for {len(all_rows)} jobs")
 
             for idx, row in enumerate(all_rows, start=1):
-                detail_text = extract_job_detail_text(row["job_url"])
+                detail_text = extract_job_detail_text(row["job_url"], session=session)
                 row["job_detail_text"] = detail_text
 
                 skill_result = extract_skills(detail_text)
