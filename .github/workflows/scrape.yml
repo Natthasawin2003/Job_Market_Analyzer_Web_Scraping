@@ -1,5 +1,8 @@
 name: Daily Job Scraper
 
+permissions:
+  contents: write
+  
 on:
   schedule:
     - cron: '0 1,12 * * *'   # Runs twice daily (01:00 & 12:00 UTC)
