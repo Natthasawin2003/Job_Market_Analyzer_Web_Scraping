@@ -968,7 +968,7 @@ def scrape_job_jobsdb(search_url: str = "", search_location: str = "", max_pages
             print(f"[Done] Collected {len(job_df)} rows for '{keyword}' job search in JobsDB")
     except Exception as e:
         print(f"Error occurred on JobsDB scraping: {e}")
-        print("Skipping JobThai and returning collected data so far.")
+        print("Skipping JobsDB and returning collected data so far.")
 
     if not collected_frames:
         return pd.DataFrame()
@@ -1411,8 +1411,25 @@ if not csv_files:
     print(f"No CSV files found in: {SCRAPED_EACH_DIR.resolve()}")
     job_all_df = pd.DataFrame()
 else:
-    dataframes = [pd.read_csv(file) for file in csv_files]
-    job_all_df = pd.concat(dataframes, ignore_index=True)
+    dataframes = []
+
+    for file in csv_files:
+        if file.stat().st_size > 0:   # check file size
+            try:
+                df = pd.read_csv(file)
+                if not df.empty:
+                    dataframes.append(df)
+                else:
+                    print(f"{file.name} has header but no rows.")
+            except Exception as e:
+                print(f"Error reading {file.name}: {e}")
+        else:
+            print(f"{file.name} is empty (0 bytes). Skipping.")   
+
+    if dataframes:
+        job_all_df = pd.concat(dataframes, ignore_index=True)
+    else:
+        job_all_df = pd.DataFrame()
 
     output_static = SCRAPED_ALL_DIR / "jobs_all_scraped.csv"
     output_timestamped = SCRAPED_ALL_DIR / f"jobs_all_scraped_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
